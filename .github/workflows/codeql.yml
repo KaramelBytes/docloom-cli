@@ -5,8 +5,8 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  # schedule:
-  #   - cron: '0 0 * * 0'
+  schedule:
+    - cron: '0 0 * * 0'
 
 jobs:
   analyze:
@@ -25,10 +25,10 @@ jobs:
           languages: go
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
-      - name: Perform CodeQL Analysis (no upload)
+      - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          upload: never
+          category: '/language:go'
           output: codeql-results
       - name: Upload CodeQL SARIF as artifact
         if: always()

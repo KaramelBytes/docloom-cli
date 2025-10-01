@@ -17,8 +17,8 @@ DocLoom is a Go CLI that merges multiple documents into a unified, AI-ready cont
 Prerequisites: Go 1.22+
 
 ```bash
-git clone https://github.com/KaramelBytes/docloom
-cd docloom
+git clone https://github.com/KaramelBytes/docloom-cli
+cd docloom-cli
 
 # Build a local binary in the current directory
 go build -o docloom .

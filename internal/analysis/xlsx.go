@@ -38,7 +38,7 @@ func AnalyzeXLSX(path string, opt Options, sheetName string, sheetIndex int) (*R
 		for _, s := range sheets {
 			if strings.EqualFold(s.Name, sheetName) {
 				if rel, ok := rels[s.RID]; ok {
-					target = filepath.Join("xl", rel)
+					target = normalizeRelPath(rel)
 				}
 				break
 			}
@@ -71,7 +71,7 @@ func AnalyzeXLSX(path string, opt Options, sheetName string, sheetIndex int) (*R
 		}
 		if rid != "" {
 			if rel, ok := rels[rid]; ok {
-				target = filepath.Join("xl", rel)
+				target = normalizeRelPath(rel)
 			}
 		}
 		if target == "" {
@@ -777,5 +777,15 @@ func atoiSafe(s string) int {
 	return n
 }
 
-// tiny math/os helpers to keep imports localized
-// (helpers removed; using math/os directly)
+// normalizeRelPath converts relationship Target paths to ZIP-compatible paths.
+// Relationships may have leading slashes (e.g., "/xl/worksheets/sheet1.xml")
+// but ZIP entries don't include the leading slash.
+func normalizeRelPath(rel string) string {
+	// Strip leading slash if present
+	rel = strings.TrimPrefix(rel, "/")
+	// If it already starts with "xl/", use as-is; otherwise prepend "xl/"
+	if strings.HasPrefix(rel, "xl/") {
+		return rel
+	}
+	return filepath.Join("xl", rel)
+}

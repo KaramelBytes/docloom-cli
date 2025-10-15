@@ -195,6 +195,7 @@ docloom models fetch --provider openrouter [--merge] [--output models.json]
 Batch analysis with progress
 
 - Use `docloom analyze-batch "data/*.csv"` (supports globs) to process multiple files with `[N/Total]` progress.
+- Supports mixed inputs: `.csv`, `.tsv`, `.xlsx` are analyzed; other formats (`.yaml`, `.md`, `.txt`, `.docx`) are added as regular documents when `-p` is provided.
 - When attaching (`-p`), you can override sample rows for all summaries using `--sample-rows-project`. Set it to `0` to disable sample tables in reports.
 - When writing summaries into a project (`dataset_summaries/`), filenames are disambiguated:
   - If `--sheet-name` is used, the sheet slug is included: `name__sheet-sales.summary.md`

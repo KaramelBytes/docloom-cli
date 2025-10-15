@@ -132,20 +132,56 @@ var analyzeBatchCmd = &cobra.Command{
 				fmt.Printf("[%d/%d] Processing %s...\n", i+1, total, filepath.Base(path))
 			}
 			lower := strings.ToLower(path)
+			ext := strings.ToLower(filepath.Ext(lower))
 			var md string
 			var err error
-			if strings.HasSuffix(lower, ".xlsx") {
+			isTabular := false
+			switch ext {
+			case ".xlsx":
+				isTabular = true
 				rep, e := analysis.AnalyzeXLSX(path, opt, abSheetName, abSheetIndex)
 				err = e
 				if err == nil {
 					md = rep.Markdown()
 				}
-			} else {
+			case ".csv", ".tsv":
+				isTabular = true
+				// If .tsv and delimiter not explicitly set, force tab
+				if ext == ".tsv" && !cmd.Flags().Changed("delimiter") {
+					opt.Delimiter = '\t'
+				}
 				rep, e := analysis.AnalyzeCSV(path, opt)
 				err = e
 				if err == nil {
 					md = rep.Markdown()
 				}
+			}
+			if !isTabular {
+				// Non-tabular file: add as a regular document if project is provided; otherwise skip with a note.
+				if p != nil {
+					desc := abDescription
+					if desc == "" {
+						desc = "Added via analyze-batch (non-tabular)"
+					}
+					if err := p.AddDocument(path, desc); err != nil {
+						// If duplicate or other error, warn and continue
+						if !abQuiet {
+							fmt.Printf("⚠ Skipped adding %s: %v\n", filepath.Base(path), err)
+						}
+					} else {
+						if err := p.Save(); err != nil {
+							return err
+						}
+						if !abQuiet {
+							fmt.Printf("✓ Added document to project '%s' as %s\n", p.Name, filepath.Base(path))
+						}
+					}
+					continue
+				}
+				if !abQuiet {
+					fmt.Printf("⚠ Skipping non-tabular file without project: %s\n", filepath.Base(path))
+				}
+				continue
 			}
 			if err != nil {
 				return err

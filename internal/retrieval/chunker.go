@@ -93,9 +93,7 @@ func hardSplitByTokens(s string, maxTokens int) []string {
 				buf = nil
 				cur = 0
 			}
-			for _, part := range splitByChars(ln, maxTokens*4) {
-				out = append(out, part)
-			}
+			out = append(out, splitByChars(ln, maxTokens*4)...)
 			continue
 		}
 		if cur+lt > maxTokens && len(buf) > 0 {

@@ -9,26 +9,28 @@ func CountTokens(text string) int {
 	if len(text) == 0 {
 		return 0
 	}
-	// Ensure at least 1 token for any non-empty text
-	tokens := len([]rune(text)) / 4
-	if tokens == 0 {
+	// Use a simple heuristic and add a safety margin for dense/technical content
+	estimate := float64(len([]rune(text))) / 4.0
+	withMargin := estimate * 1.2
+	if withMargin < 1.0 {
 		return 1
 	}
-	return tokens
+	return int(withMargin)
 }
 
 // TruncateToTokenLimit naively truncates text to roughly fit within a token limit.
 func TruncateToTokenLimit(text string, limit int) string {
-	if limit <= 0 {
-		return ""
-	}
-	runes := []rune(text)
-	// Expand limit to character count using the same 4 chars per token heuristic
-	charLimit := limit * 4
-	if charLimit >= len(runes) {
-		return text
-	}
-	return string(runes[:charLimit])
+    if limit <= 0 {
+        return ""
+    }
+    runes := []rune(text)
+    // Expand limit to character count using the 4 chars/token heuristic adjusted by the 1.2 safety margin
+    // CountTokens ≈ (len(runes)/4) * 1.2 => len(runes) ≈ limit / 1.2 * 4
+    charLimit := int(float64(limit) / 1.2 * 4.0)
+    if charLimit >= len(runes) {
+        return text
+    }
+    return string(runes[:charLimit])
 }
 
 // TokenBreakdown returns a simple breakdown map of labeled sections to token counts.

@@ -190,7 +190,7 @@ func AnalyzeCSV(path string, opt Options) (*Report, error) {
 		maxRows = math.MaxInt
 	}
 	sampleRows := opt.SampleRows
-	if sampleRows <= 0 {
+	if sampleRows < 0 {
 		sampleRows = 5
 	}
 	var numericVals [][]float64
@@ -460,6 +460,8 @@ func AnalyzeCSV(path string, opt Options) (*Report, error) {
 				s.OutliersCount = cnt
 				s.OutliersMaxAbsZ = maxAbsZ
 				s.OutlierThreshold = thr
+				// FREE MEMORY: Clear the array after outlier computation
+				numericVals[idx] = nil
 			}
 		} else if c.dtCnt >= c.txtCnt && c.dtCnt > 0 {
 			kind = "datetime"

@@ -17,6 +17,10 @@ docloom add -p myproj ./README.md --desc "Main readme"
 # Tip: CSV/TSV/XLSX are summarized instead of printed raw.
 # You can pre-check or export a summary with:
 #   docloom analyze ./data/metrics.csv --output metrics_summary.md
+# For many files at once (with progress):
+#   docloom analyze-batch "data/*.csv"
+# When attaching (-p), control samples across all outputs:
+#   --sample-rows-project 0   # disable sample tables
 
 ## Optional: Use analysis instructions
 

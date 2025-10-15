@@ -1,7 +1,6 @@
 package retrieval
 
 import (
-	"github.com/KaramelBytes/docloom-cli/internal/utils"
 	"strings"
 )
 
@@ -17,12 +16,25 @@ func ChunkByTokens(text string, maxTokens, overlap int) []string {
 	paras := splitParagraphs(text)
 	var chunks []string
 	var window []string
-	curTokens := 0
+	var curTokens int
 	for _, p := range paras {
-		t := utils.CountTokens(p)
+		t := approxTokens(p)
+		if t > maxTokens {
+			if len(window) > 0 {
+				chunks = append(chunks, strings.Join(window, "\n\n"))
+				if overlap > 0 {
+					window, curTokens = backfillOverlap(window, overlap)
+				} else {
+					window = window[:0]
+					curTokens = 0
+				}
+			}
+			subs := hardSplitByTokens(p, maxTokens)
+			chunks = append(chunks, subs...)
+			continue
+		}
 		if curTokens+t > maxTokens && len(window) > 0 {
 			chunks = append(chunks, strings.Join(window, "\n\n"))
-			// prepare overlap
 			if overlap > 0 {
 				window, curTokens = backfillOverlap(window, overlap)
 			} else {
@@ -58,7 +70,7 @@ func backfillOverlap(paras []string, overlap int) ([]string, int) {
 	var out []string
 	tokens := 0
 	for i := len(paras) - 1; i >= 0; i-- {
-		t := utils.CountTokens(paras[i])
+		t := approxTokens(paras[i])
 		if tokens+t > overlap && len(out) > 0 {
 			break
 		}
@@ -66,4 +78,64 @@ func backfillOverlap(paras []string, overlap int) ([]string, int) {
 		tokens += t
 	}
 	return out, tokens
+}
+
+func hardSplitByTokens(s string, maxTokens int) []string {
+	lines := strings.Split(s, "\n")
+	var out []string
+	var buf []string
+	cur := 0
+	for _, ln := range lines {
+		lt := approxTokens(ln)
+		if lt > maxTokens {
+			if len(buf) > 0 {
+				out = append(out, strings.Join(buf, "\n"))
+				buf = nil
+				cur = 0
+			}
+			out = append(out, splitByChars(ln, maxTokens*4)...)
+			continue
+		}
+		if cur+lt > maxTokens && len(buf) > 0 {
+			out = append(out, strings.Join(buf, "\n"))
+			buf = nil
+			cur = 0
+		}
+		buf = append(buf, ln)
+		cur += lt
+	}
+	if len(buf) > 0 {
+		out = append(out, strings.Join(buf, "\n"))
+	}
+	if len(out) == 0 {
+		return splitByChars(s, maxTokens*4)
+	}
+	return out
+}
+
+func splitByChars(s string, charLimit int) []string {
+	if charLimit <= 0 {
+		return []string{s}
+	}
+	r := []rune(strings.TrimSpace(s))
+	if len(r) == 0 {
+		return nil
+	}
+	var out []string
+	for i := 0; i < len(r); i += charLimit {
+		end := i + charLimit
+		if end > len(r) {
+			end = len(r)
+		}
+		out = append(out, string(r[i:end]))
+	}
+	return out
+}
+
+// approxTokens estimates tokens as 1 token ≈ 4 runes, without safety margin.
+func approxTokens(s string) int {
+	if s == "" {
+		return 0
+	}
+	return len([]rune(s)) / 4
 }

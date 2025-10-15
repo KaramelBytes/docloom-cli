@@ -13,6 +13,7 @@ import (
 	"github.com/KaramelBytes/docloom-cli/internal/project"
 	"github.com/KaramelBytes/docloom-cli/internal/utils"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // embedderAdapter adapts ai.Client to retrieval.Embedder with a fixed model name.
@@ -49,6 +50,7 @@ var (
 	genOutputFmt   string
 	genStream      bool
 	genOllamaHost  string
+	genTimeoutSec  int
 	// Retrieval flags
 	genRetrieval       bool
 	genReindex         bool
@@ -75,16 +77,35 @@ var generateCmd = &cobra.Command{
 		}
 
 		// Ensure flags that can carry over between invocations are reset to defaults
-		// if not explicitly provided in this run.
+		// unless explicitly provided in THIS run. Use Visit to detect set flags in this parse.
 		if f := cmd.Flags(); f != nil {
-			if !f.Changed("budget-limit") {
+			provided := map[string]bool{}
+			f.Visit(func(fl *pflag.Flag) {
+				provided[fl.Name] = true
+			})
+			if !provided["budget-limit"] {
 				genBudgetLimit = 0
 			}
-			if !f.Changed("prompt-limit") {
+			if !provided["prompt-limit"] {
 				genPromptLimit = 0
 			}
-			if !f.Changed("print-prompt") {
+			if !provided["print-prompt"] {
 				genPrintPrompt = false
+			}
+			if !provided["provider"] {
+				genProvider = ""
+			}
+			if !provided["model"] {
+				genModel = ""
+			}
+			if !provided["max-tokens"] {
+				genMaxTokens = 0
+			}
+			if !provided["timeout-sec"] {
+				genTimeoutSec = 180
+			}
+			if !provided["dry-run"] {
+				genDryRun = false
 			}
 		}
 
@@ -220,9 +241,40 @@ var generateCmd = &cobra.Command{
 		// Model metadata and pricing warnings
 		var estCost float64
 		if mi, ok := ai.LookupModel(model); ok {
-			if tokens+maxTokens > mi.ContextTokens {
+			fmt.Printf("DEBUG: Model: %s, ContextTokens: %d, tokens: %d, maxTokens: %d\n", mi.Name, mi.ContextTokens, tokens, maxTokens)
+			if !genDryRun && (tokens+maxTokens > mi.ContextTokens) {
+				msg := fmt.Sprintf("⚠ Prompt (%d tokens) + max-tokens (%d) exceeds %s context window (~%d tokens).\n",
+					tokens, maxTokens, mi.Name, mi.ContextTokens)
+
 				if !genQuiet {
-					fmt.Printf("⚠ Warning: prompt (%d) + max-tokens (%d) exceeds %s context window (~%d).\n", tokens, maxTokens, mi.Name, mi.ContextTokens)
+					fmt.Print(msg)
+				}
+
+				{
+					_, providerName, err := buildRuntime(cfg, runtimeOptions{
+						ProviderFlag: genProvider,
+						OllamaHost:   genOllamaHost,
+					})
+					if err != nil {
+						return err
+					}
+					if providerName == ai.ProviderOllama || providerName == "local" {
+						availableForPrompt := mi.ContextTokens - maxTokens
+						if availableForPrompt < 0 {
+							availableForPrompt = mi.ContextTokens / 2 // Conservative
+						}
+
+						return fmt.Errorf("context window exceeded for local model '%s'.\n"+
+							"  Required: %d tokens (prompt) + %d (max-tokens) = %d total\n"+
+							"  Available: %d tokens\n\n"+
+							"Solutions:\n"+
+							"  1. Use --prompt-limit %d to truncate the prompt\n"+
+							"  2. Enable retrieval mode with --retrieval to use only relevant chunks\n"+
+							"  3. Remove documents from project or reduce --max-rows for XLSX files\n"+
+							"  4. Use a model with larger context window",
+							model, tokens, maxTokens, tokens+maxTokens, mi.ContextTokens,
+							availableForPrompt)
+					}
 				}
 			}
 			if cost, ok := ai.EstimateCostUSD(model, tokens, maxTokens); ok {
@@ -262,7 +314,12 @@ var generateCmd = &cobra.Command{
 			return err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		// Request timeout
+		timeoutSec := genTimeoutSec
+		if timeoutSec <= 0 {
+			timeoutSec = 180
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
 		defer cancel()
 
 		req := ai.GenerateRequest{
@@ -334,6 +391,13 @@ var generateCmd = &cobra.Command{
 				}
 				return fmt.Errorf("model not found (%s). Verify the model name or sync catalog via 'docloom models fetch' or 'docloom models show': %w", model, err)
 			case errors.As(err, &brErr):
+				// Check if prompt was very large
+				if tokens > 50000 {
+					return fmt.Errorf("request invalid: prompt is very large (%d tokens).\n"+
+						"  This often happens with multiple XLSX files in a project.\n"+
+						"  Try: --retrieval mode (processes only relevant chunks), or reduce documents",
+						tokens)
+				}
 				return fmt.Errorf("request invalid. Try reducing prompt size or max-tokens: %w", err)
 			case errors.As(err, &qErr):
 				return fmt.Errorf("quota/billing issue. Check your provider account: %w", err)
@@ -386,6 +450,7 @@ func init() {
 	generateCmd.Flags().BoolVar(&genJSON, "json", false, "emit response as JSON to stdout")
 	generateCmd.Flags().BoolVar(&genStream, "stream", false, "stream responses if supported by the provider")
 	generateCmd.Flags().StringVar(&genOllamaHost, "ollama-host", "", "override Ollama host (e.g., http://127.0.0.1:11434)")
+	generateCmd.Flags().IntVar(&genTimeoutSec, "timeout-sec", 180, "request timeout in seconds (default 180)")
 	// Retrieval flags
 	generateCmd.Flags().BoolVar(&genRetrieval, "retrieval", false, "enable retrieval-augmented generation (RAG)")
 	generateCmd.Flags().BoolVar(&genReindex, "reindex", false, "rebuild the retrieval index before generation")

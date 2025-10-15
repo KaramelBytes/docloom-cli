@@ -32,6 +32,9 @@ docloom generate -p myproj --retrieval --embed-provider ollama --embed-model nom
 ```bash
 docloom --http-timeout 90 --retry-max 5 --retry-base-ms 750 --retry-max-ms 6000 \
   generate -p myproj --dry-run
+ 
+# Request timeout for generation phase (default 180s)
+docloom generate -p myproj --dry-run --timeout-sec 240
 ```
 
 ## Machine-readable dry-run output

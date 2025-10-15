@@ -93,17 +93,57 @@ func (p *Project) Save() error {
 
 // AddDocument reads a file and adds it to the project metadata and cache.
 func (p *Project) AddDocument(path, description string) error {
-	parsed, err := parser.ParseFile(path)
+	// Normalize path for comparison
+	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("parse document: %w", err)
+		absPath = path
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("stat document: %w", err)
-	}
-	name := filepath.Base(path)
-	id := uuid.NewString()
 
+	// Check for duplicate paths
+	for id, existing := range p.Documents {
+		existingAbs, _ := filepath.Abs(existing.Path)
+		if existingAbs == absPath {
+			return fmt.Errorf("document already exists in project: %s\n  ID: %s\n  Description: %s\n  Use 'docloom list --docs -p <project>' to view all documents",
+									existing.Name, id, existing.Description)
+						}
+					}
+				
+					// Calculate current total tokens
+					totalTokens := 0
+					for _, doc := range p.Documents {
+						totalTokens += doc.Tokens
+					}
+				
+					// Parse new document
+					parsed, err := parser.ParseFile(path)
+					if err != nil {
+						return fmt.Errorf("parse document: %w", err)
+					}
+				
+					newTokens := parser.EstimateTokens(parsed)
+					projectedTotal := totalTokens + newTokens
+				
+					// Enforce hard limit for projects targeting local LLMs
+					const maxRecommendedTokens = 100000
+					const maxCriticalTokens = 200000
+				
+					if projectedTotal > maxCriticalTokens {
+						return fmt.Errorf("cannot add document: would exceed maximum project size (%d tokens). Current: %d, New: %d. Consider using --retrieval mode or creating separate projects",
+							maxCriticalTokens, totalTokens, newTokens)
+					}
+				
+					if projectedTotal > maxRecommendedTokens {
+						fmt.Printf("⚠ WARNING: Total document content will be ~%d tokens (exceeds recommended %d).\n",
+							projectedTotal, maxRecommendedTokens)
+						fmt.Printf("   Consider: (1) Using --retrieval mode, (2) Reducing --max-rows for tabular files, or (3) Removing documents\n")
+					}
+				
+					info, err := os.Stat(path)
+					if err != nil {
+						return fmt.Errorf("stat document: %w", err)
+					}
+					name := filepath.Base(path)
+					id := uuid.NewString()
 	d := &Document{
 		ID:          id,
 		Path:        path,
@@ -168,9 +208,7 @@ func (p *Project) BuildPrompt() (string, int, error) {
 
 	// Task reiteration
 	sb.WriteString("[TASK]\n")
-	sb.WriteString("Based on the reference documents above, please: ")
-	sb.WriteString(p.Instructions)
-	sb.WriteString("\n")
+	sb.WriteString("Follow the instructions above using the reference documents.\n")
 
 	prompt := sb.String()
 	tokens := utils.CountTokens(prompt)

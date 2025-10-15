@@ -28,5 +28,22 @@ func ParseXLSXFile(path string, sheetName string, sheetIndex int) (string, error
 	if rep != nil && rep.Name == filepath.Base(path) && sheetName != "" {
 		rep.Name = fmt.Sprintf("%s (sheet: %s)", rep.Name, sheetName)
 	}
-	return rep.Markdown(), nil
+	md := rep.Markdown()
+
+	// Validate summary size before returning
+	const maxSummaryChars = 100000 // ~20-30k tokens
+	if len(md) > maxSummaryChars {
+		// Provide detailed diagnostic
+		return "", fmt.Errorf("XLSX analysis produced %d character summary (limit: %d).\n"+
+			"  File: %s\n"+
+			"  Rows: %d, Columns: %d\n"+
+			"  This file may be too large or complex.\n\n"+
+			"Solutions:\n"+
+			"  1. Use --max-rows <N> to limit rows analyzed (e.g., --max-rows 10000)\n"+
+			"  2. Analyze specific sheet with --sheet-name if workbook has multiple sheets\n"+
+			"  3. Pre-filter the data to include only relevant rows/columns",
+			len(md), maxSummaryChars, filepath.Base(path), rep.Rows, len(rep.Cols))
+	}
+
+	return md, nil
 }

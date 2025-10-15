@@ -38,12 +38,23 @@ func AnalyzeXLSX(path string, opt Options, sheetName string, sheetIndex int) (*R
 		for _, s := range sheets {
 			if strings.EqualFold(s.Name, sheetName) {
 				if rel, ok := rels[s.RID]; ok {
-					target = filepath.Join("xl", rel)
+					target = normalizeRelPath(rel)
 				}
 				break
 			}
 		}
 	}
+	if sheetName != "" && target == "" {
+		// Sheet name was requested but not found
+		availableSheets := make([]string, len(sheets))
+		for i, s := range sheets {
+			availableSheets[i] = s.Name
+		}
+
+		return nil, fmt.Errorf("sheet '%s' not found in workbook '%s'.\nAvailable sheets: %s",
+			sheetName, filepath.Base(path), strings.Join(availableSheets, ", "))
+	}
+
 	if target == "" {
 		// fallback by index (1-based)
 		idx := sheetIndex
@@ -60,7 +71,7 @@ func AnalyzeXLSX(path string, opt Options, sheetName string, sheetIndex int) (*R
 		}
 		if rid != "" {
 			if rel, ok := rels[rid]; ok {
-				target = filepath.Join("xl", rel)
+				target = normalizeRelPath(rel)
 			}
 		}
 		if target == "" {
@@ -111,7 +122,7 @@ func AnalyzeXLSX(path string, opt Options, sheetName string, sheetIndex int) (*R
 		maxRows = int(^uint(0) >> 1)
 	}
 	sampleRows := opt.SampleRows
-	if sampleRows <= 0 {
+	if sampleRows < 0 {
 		sampleRows = 5
 	}
 	var numericVals [][]float64
@@ -350,6 +361,8 @@ func AnalyzeXLSX(path string, opt Options, sheetName string, sheetIndex int) (*R
 				s.OutliersCount = cnt
 				s.OutliersMaxAbsZ = maxAbsZ
 				s.OutlierThreshold = thr
+				// FREE MEMORY: Clear the array after outlier computation
+				numericVals[i] = nil
 			}
 		} else if c.dtCnt >= c.txtCnt && c.dtCnt > 0 {
 			kind = "datetime"
@@ -764,5 +777,15 @@ func atoiSafe(s string) int {
 	return n
 }
 
-// tiny math/os helpers to keep imports localized
-// (helpers removed; using math/os directly)
+// normalizeRelPath converts relationship Target paths to ZIP-compatible paths.
+// Relationships may have leading slashes (e.g., "/xl/worksheets/sheet1.xml")
+// but ZIP entries don't include the leading slash.
+func normalizeRelPath(rel string) string {
+	// Strip leading slash if present
+	rel = strings.TrimPrefix(rel, "/")
+	// If it already starts with "xl/", use as-is; otherwise prepend "xl/"
+	if strings.HasPrefix(rel, "xl/") {
+		return rel
+	}
+	return filepath.Join("xl", rel)
+}

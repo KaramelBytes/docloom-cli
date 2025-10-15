@@ -27,6 +27,7 @@ var (
 	anaThousands   string
 	anaOutliers    bool
 	anaOutlierThr  float64
+	anaSampleRowsProject int
 )
 
 var analyzeCmd = &cobra.Command{
@@ -87,6 +88,9 @@ var analyzeCmd = &cobra.Command{
 		if anaOutlierThr > 0 {
 			opt.OutlierThreshold = anaOutlierThr
 		}
+		if anaProject != "" && anaSampleRowsProject >= 0 {
+			opt.SampleRows = anaSampleRowsProject
+		}
 		// choose analyzer by extension
 		lower := strings.ToLower(path)
 		var md string
@@ -126,6 +130,35 @@ var analyzeCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
+
+			// Count existing dataset summaries
+			datasetCount := 0
+			totalDatasetTokens := 0
+			for _, doc := range p.Documents {
+				desc := strings.ToLower(doc.Description)
+				if strings.Contains(desc, "dataset") || strings.Contains(desc, "summary") ||
+					strings.HasSuffix(doc.Name, ".summary.md") {
+					datasetCount++
+					totalDatasetTokens += doc.Tokens
+				}
+			}
+
+			// Enforce limits
+			const maxDatasetSummaries = 20
+			const maxDatasetTokens = 150000
+
+			if datasetCount >= maxDatasetSummaries {
+				return fmt.Errorf("project already has %d dataset summaries (limit: %d).\n"+
+					"  Consider: (1) Removing old summaries, (2) Using --retrieval mode, or (3) Creating a new project",
+					datasetCount, maxDatasetSummaries)
+			}
+
+			if totalDatasetTokens >= maxDatasetTokens {
+				fmt.Printf("⚠ WARNING: Project has %d tokens of dataset summaries (recommended max: %d)\n",
+					totalDatasetTokens, maxDatasetTokens)
+				fmt.Printf("   Continuing will likely exceed local LLM context windows. Consider using --retrieval mode.\n\n")
+			}
+
 			// Write summary as a doc file in project folder
 			outDir := filepath.Join(p.RootDir(), "dataset_summaries")
 			if err := os.MkdirAll(outDir, 0o755); err != nil {
@@ -134,7 +167,39 @@ var analyzeCmd = &cobra.Command{
 			base := filepath.Base(path)
 			// ensure safe base for filename
 			safe := strings.TrimSuffix(base, filepath.Ext(base))
-			outFile := filepath.Join(outDir, safe+".summary.md")
+			// disambiguate with sheet name if provided
+			sheetBase := safe
+			if anaSheetName != "" {
+				s := strings.ToLower(strings.TrimSpace(anaSheetName))
+				var b strings.Builder
+				for _, r := range s {
+					if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+						b.WriteRune(r)
+					} else if r == ' ' || r == '-' || r == '_' {
+						b.WriteRune('-')
+					}
+				}
+				ss := strings.Trim(b.String(), "-")
+				if ss == "" {
+					ss = "sheet"
+				}
+				sheetBase = safe + "__sheet-" + ss
+			}
+			outFile := filepath.Join(outDir, sheetBase+".summary.md")
+			if _, statErr := os.Stat(outFile); statErr == nil {
+				idx := 2
+				for {
+					cand := filepath.Join(outDir, fmt.Sprintf("%s__%d.summary.md", sheetBase, idx))
+					if _, err := os.Stat(cand); os.IsNotExist(err) {
+						if !cmd.Flags().Changed("quiet") {
+							fmt.Printf("⚠ Detected existing summary, writing to %s to avoid overwrite.\n", filepath.Base(cand))
+						}
+						outFile = cand
+						break
+					}
+					idx++
+				}
+			}
 			if err := os.WriteFile(outFile, []byte(md), 0o644); err != nil {
 				return fmt.Errorf("write project summary: %w", err)
 			}
@@ -175,4 +240,5 @@ func init() {
 	analyzeCmd.Flags().Float64Var(&anaOutlierThr, "outlier-threshold", 3.5, "robust |z| threshold for outliers (MAD-based)")
 	analyzeCmd.Flags().StringVar(&anaSheetName, "sheet-name", "", "XLSX: sheet name to analyze")
 	analyzeCmd.Flags().IntVar(&anaSheetIndex, "sheet-index", 1, "XLSX: 1-based sheet index (used if --sheet-name not provided)")
+	analyzeCmd.Flags().IntVar(&anaSampleRowsProject, "sample-rows-project", -1, "when attaching (-p), override sample rows for dataset summaries (0 disables samples)")
 }

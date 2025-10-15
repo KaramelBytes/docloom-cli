@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/KaramelBytes/docloom-cli/internal/ai"
 )
 
 // runCmd is a helper to execute the root command with args.
@@ -39,11 +41,32 @@ func runCmd(t *testing.T, args ...string) {
 			_ = fl.Value.Set("false")
 			fl.Changed = false
 		}
+		if fl := f.Lookup("dry-run"); fl != nil {
+			_ = fl.Value.Set("false")
+			fl.Changed = false
+		}
+		if fl := f.Lookup("provider"); fl != nil {
+			_ = fl.Value.Set("")
+			fl.Changed = false
+		}
+		if fl := f.Lookup("model"); fl != nil {
+			_ = fl.Value.Set("")
+			fl.Changed = false
+		}
+		if fl := f.Lookup("max-tokens"); fl != nil {
+			_ = fl.Value.Set("0")
+			fl.Changed = false
+		}
 	}
 	// Reset bound variables
 	genBudgetLimit = 0
 	genPromptLimit = 0
 	genPrintPrompt = false
+	genDryRun = false
+	genProvider = ""
+	genModel = ""
+	genMaxTokens = 0
+	genTimeoutSec = 180
 	rootCmd.SetArgs(args)
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("command %v failed: %v", args, err)
@@ -72,6 +95,40 @@ func TestCLI_BudgetLimitBlocksGeneration(t *testing.T) {
 		t.Fatalf("expected error due to budget limit, got nil")
 	}
 }
+func TestCLI_ContextWindowExceededError(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", oldHome)
+	os.Setenv("HOME", home)
+
+	// Mock the AI client and model info
+	ai.MergeCatalog(map[string]ai.ModelInfo{
+		"ollama/test-model": {
+			Name:          "ollama/test-model",
+			ContextTokens: 100,
+		},
+	})
+
+	// Create a doc file to add
+	docPath := filepath.Join(home, "doc1.md")
+	if err := os.WriteFile(docPath, []byte(strings.Repeat("a", 4*101)), 0o644); err != nil {
+		t.Fatalf("write doc: %v", err)
+	}
+
+	// init project
+	runCmd(t, "init", "itest", "-d", "integration test")
+	// add doc
+	runCmd(t, "add", "-p", "itest", docPath, "--desc", "first doc")
+	// set instructions
+	runCmd(t, "instruct", "-p", "itest", "Summarize the content")
+
+	// Expect generate to fail due to context window exceeded
+	rootCmd.SetArgs([]string{"generate", "-p", "itest", "--provider", "ollama", "--model", "ollama/test-model", "--max-tokens", "50"})
+	if err := rootCmd.Execute(); err == nil {
+		t.Fatalf("expected error due to context window exceeded, got nil")
+	}
+}
+
 func TestCLI_Init_Add_Instruct_GenerateDryRun(t *testing.T) {
 	// Use a temp HOME to isolate config and projects
 	home := t.TempDir()

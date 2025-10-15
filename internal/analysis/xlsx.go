@@ -44,6 +44,17 @@ func AnalyzeXLSX(path string, opt Options, sheetName string, sheetIndex int) (*R
 			}
 		}
 	}
+	if sheetName != "" && target == "" {
+		// Sheet name was requested but not found
+		availableSheets := make([]string, len(sheets))
+		for i, s := range sheets {
+			availableSheets[i] = s.Name
+		}
+
+		return nil, fmt.Errorf("sheet '%s' not found in workbook '%s'.\nAvailable sheets: %s",
+			sheetName, filepath.Base(path), strings.Join(availableSheets, ", "))
+	}
+
 	if target == "" {
 		// fallback by index (1-based)
 		idx := sheetIndex
@@ -111,7 +122,7 @@ func AnalyzeXLSX(path string, opt Options, sheetName string, sheetIndex int) (*R
 		maxRows = int(^uint(0) >> 1)
 	}
 	sampleRows := opt.SampleRows
-	if sampleRows <= 0 {
+	if sampleRows < 0 {
 		sampleRows = 5
 	}
 	var numericVals [][]float64
@@ -350,6 +361,8 @@ func AnalyzeXLSX(path string, opt Options, sheetName string, sheetIndex int) (*R
 				s.OutliersCount = cnt
 				s.OutliersMaxAbsZ = maxAbsZ
 				s.OutlierThreshold = thr
+				// FREE MEMORY: Clear the array after outlier computation
+				numericVals[i] = nil
 			}
 		} else if c.dtCnt >= c.txtCnt && c.dtCnt > 0 {
 			kind = "datetime"

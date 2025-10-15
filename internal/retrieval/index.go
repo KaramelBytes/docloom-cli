@@ -253,15 +253,41 @@ func BuildIndex(ctx context.Context, emb Embedder, projectRoot string, documents
 		}
 		return idx, nil
 	}
-	// Embed required chunks in one go
-	chunkTexts := make([]string, len(toEmbed))
-	for i := range toEmbed {
-		chunkTexts[i] = toEmbed[i].text
+	// Embed required chunks in batches
+	const maxEmbedBatchSize = 100 // Conservative batch size
+	vecs := make([][]float32, 0, len(toEmbed))
+
+	fmt.Printf("Embedding %d chunks in batches of %d...\n", len(toEmbed), maxEmbedBatchSize)
+
+	for start := 0; start < len(toEmbed); start += maxEmbedBatchSize {
+		end := start + maxEmbedBatchSize
+		if end > len(toEmbed) {
+			end = len(toEmbed)
+		}
+
+		batchToEmbed := toEmbed[start:end]
+		chunkTexts := make([]string, len(batchToEmbed))
+		for i, cm := range batchToEmbed {
+			chunkTexts[i] = cm.text
+		}
+
+		fmt.Printf("  Processing batch %d-%d...\n", start+1, end)
+
+		batchVecs, err := emb.Embed(ctx, chunkTexts)
+		if err != nil {
+			return nil, fmt.Errorf("embed batch %d-%d: %w", start, end, err)
+		}
+
+		vecs = append(vecs, batchVecs...)
+
+		// Allow brief GC opportunity between batches
+		if end < len(toEmbed) {
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
-	vecs, err := emb.Embed(ctx, chunkTexts)
-	if err != nil {
-		return nil, err
-	}
+
+	fmt.Printf("✓ Embedded %d chunks successfully\n", len(vecs))
+
 	// Assemble final records
 	idx.Records = append(idx.Records, reuse...)
 	for i := range toEmbed {

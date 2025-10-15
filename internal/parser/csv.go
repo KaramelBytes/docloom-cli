@@ -28,5 +28,21 @@ func ParseCSVFile(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return rep.Markdown(), nil
+	md := rep.Markdown()
+
+	// Validate summary size before returning
+	const maxSummaryChars = 100000 // ~20-30k tokens
+	if len(md) > maxSummaryChars {
+		// Provide detailed diagnostic
+		return "", fmt.Errorf("CSV analysis produced %d character summary (limit: %d).\n"+
+			"  File: %s\n"+
+			"  Rows: %d, Columns: %d\n"+
+			"  This file may be too large or complex.\n\n"+
+			"Solutions:\n"+
+			"  1. Use --max-rows <N> to limit rows analyzed (e.g., --max-rows 10000)\n"+
+			"  2. Pre-filter the data to include only relevant rows/columns",
+			len(md), maxSummaryChars, rep.Name, rep.Rows, len(rep.Cols))
+	}
+
+	return md, nil
 }

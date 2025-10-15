@@ -161,6 +161,10 @@ docloom analyze <file> [-p <project-name>] [--output <file>] [--delimiter ','|'t
   # Analyzes CSV/TSV/XLSX and produces a compact Markdown summary; can attach to a project
   # Extras: --group-by <col1,col2> --correlations --corr-per-group --outliers --outlier-threshold 3.5 --sheet-name <name> --sheet-index N
 
+docloom analyze-batch <files...> [-p <project-name>] [--delimiter ...] [--decimal ...] [--thousands ...] [--sample-rows N] [--max-rows N] [--quiet]
+  # Analyze multiple CSV/TSV/XLSX files with progress [N/Total]. Supports globs. Mirrors flags from 'analyze'.
+  # When attaching (-p), you can override sample rows for all summaries using --sample-rows-project (0 disables samples).
+
 docloom list --projects | --docs -p <project-name>
   # Lists projects or documents
 
@@ -187,6 +191,14 @@ docloom models fetch --provider openrouter [--merge] [--output models.json]
 - Delimiters: auto-detects comma, semicolon, tab, and pipe (override via `--delimiter`).
 - Behavior in projects: When you `add` CSV/TSV/XLSX to a project, the parser stores a summary (not the raw table) to keep prompts concise and token‑efficient.
 - Standalone analysis: Use `docloom analyze <file>` to generate a report and optionally save it to a file or attach it to a project with `-p`.
+
+Batch analysis with progress
+
+- Use `docloom analyze-batch "data/*.csv"` (supports globs) to process multiple files with `[N/Total]` progress.
+- When attaching (`-p`), you can override sample rows for all summaries using `--sample-rows-project`. Set it to `0` to disable sample tables in reports.
+- When writing summaries into a project (`dataset_summaries/`), filenames are disambiguated:
+  - If `--sheet-name` is used, the sheet slug is included: `name__sheet-sales.summary.md`
+  - On collision, a numeric suffix is appended: `name__2.summary.md`
 
 Examples
 
@@ -284,6 +296,7 @@ See `docs/api.md` for request/response details.
 
 - `--print-prompt`: prints the prompt even for real runs.
 - `--prompt-limit N`: truncates the built prompt to N tokens before sending.
+- `--timeout-sec N`: sets the request timeout (default 180 seconds).
 - `--budget-limit USD`: fails early if estimated max cost (prompt + max-tokens) exceeds the budget.
 - `--quiet`: suppresses non-essential console output.
 - `--json`: emit response as JSON to stdout.
